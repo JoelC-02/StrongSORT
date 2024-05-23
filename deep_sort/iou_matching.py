@@ -1,11 +1,12 @@
-# vim: expandtab:ts=4:sw=4
+#GIoU
 from __future__ import absolute_import
 import numpy as np
 from . import linear_assignment
-
+import math
+import paddle
 
 def iou(bbox, candidates):
-    """Computer intersection over union.
+    """Compute intersection over union.
 
     Parameters
     ----------
@@ -23,21 +24,28 @@ def iou(bbox, candidates):
         occluded by the candidate.
 
     """
-    bbox_tl, bbox_br = bbox[:2], bbox[:2] + bbox[2:]
-    candidates_tl = candidates[:, :2]
-    candidates_br = candidates[:, :2] + candidates[:, 2:]
+    bbox_x1, bbox_y1, bbox_w, bbox_h = bbox
+    candidates_x1, candidates_y1, candidates_w, candidates_h = candidates[:, 0], candidates[:, 1], candidates[:, 2], candidates[:, 3]
 
-    tl = np.c_[np.maximum(bbox_tl[0], candidates_tl[:, 0])[:, np.newaxis],
-               np.maximum(bbox_tl[1], candidates_tl[:, 1])[:, np.newaxis]]
-    br = np.c_[np.minimum(bbox_br[0], candidates_br[:, 0])[:, np.newaxis],
-               np.minimum(bbox_br[1], candidates_br[:, 1])[:, np.newaxis]]
-    wh = np.maximum(0., br - tl)
+    bbox_x1_tensor = paddle.to_tensor(bbox_x1)
+    candidates_x1_tensor = paddle.to_tensor(candidates_x1)
 
-    area_intersection = wh.prod(axis=1)
-    area_bbox = bbox[2:].prod()
-    area_candidates = candidates[:, 2:].prod(axis=1)
-    return area_intersection / (area_bbox + area_candidates - area_intersection)
+    xkis1 = paddle.maximum(bbox_x1_tensor, candidates_x1_tensor)
+    ykis1 = paddle.maximum(paddle.to_tensor(bbox_y1), paddle.to_tensor(candidates_y1))
+    xkis2 = paddle.minimum(paddle.to_tensor(bbox_x1) + paddle.to_tensor(bbox_w), paddle.to_tensor(candidates_x1) + paddle.to_tensor(candidates_w))
+    ykis2 = paddle.minimum(paddle.to_tensor(bbox_y1) + paddle.to_tensor(bbox_h), paddle.to_tensor(candidates_y1) + paddle.to_tensor(candidates_h))
+    
+    w_inter = paddle.clip(xkis2 - xkis1, min=0)
+    h_inter = paddle.clip(ykis2 - ykis1, min=0)
+    overlap = w_inter * h_inter
 
+    area1 = bbox_w * bbox_h
+    area2 = candidates_w * candidates_h
+    union = area1 + area2 - overlap + 1e-7
+    
+    iou = overlap / union
+
+    return iou
 
 def iou_cost(tracks, detections, track_indices=None,
              detection_indices=None):
